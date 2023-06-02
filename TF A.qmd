@@ -1,0 +1,180 @@
+---
+title: "TF A"
+format: pdf
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(readr)
+library(DataExplorer)
+library(MASS)
+library(caret)
+library(class)
+library(tree)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(ggplot2)
+library(dplyr) 
+library(stargazer)
+library(broom) 
+library(modelr) 
+library(pROC)
+library(caTools)
+library(PRROC)
+library(plotly)
+
+```
+
+```{r}
+train <-read.csv("C:/Users/julis/Desktop/analisis/db_airline/train.csv")
+test <-read.csv("C:/Users/julis/Desktop/analisis/db_airline/test.csv")
+train <- train %>% dplyr::select(-X,-id)
+test <- test%>% dplyr::select(-X,-id)
+```
+
+```{r}
+plot_intro(train)
+plot_histogram(train)
+plot_density(train)
+plot_qq(train)
+```
+
+```{r}
+train <- train[complete.cases(train),]
+plot_intro(train)
+```
+
+```{r}
+test<-test[complete.cases(test),]
+```
+
+```{r}
+plot_bar(train)
+```
+
+```{r}
+ggplot(train, aes(x=Flight.Distance,"",default))+geom_boxplot()+theme_test()+xlab('Flight Distance')
+```
+
+```{r}
+ggplot(train, aes(x=Departure.Delay.in.Minutes,"",default))+geom_boxplot()+theme_test()+xlab('Departure Delay [min]')
+```
+
+```{r}
+ggplot(train, aes(x=Arrival.Delay.in.Minutes,"",default))+geom_boxplot()+theme_test()+xlab('Arrival Delay [min]')
+```
+
+```{r,warning=FALSE}
+attach(train)
+outliers<-boxplot.stats(Flight.Distance)$out
+train$Flight.Distance[train$Flight.Distance%in%outliers]<-NA
+train<-filter_if(train,is.numeric,all_vars(!is.na(.)))
+```
+
+```{r}
+for (i in c("Gender","Customer.Type","Type.of.Travel","Class","satisfaction"))
+{
+train[[i]]<-as.factor(train[[i]])
+test[[i]]<-as.factor(test[[i]])
+}
+
+```
+
+## QDA
+
+```{r,warning=FALSE}
+mod_qda <- qda(satisfaction ~ ., data =  train)
+mod_qda
+predicciones <- predict(object = mod_qda, newdata = test)
+
+confusionMatrix(predicciones$class, test$satisfaction,  dnn = c("Clase predicha", "Clase real"))
+```
+
+## KNN
+
+```{r}
+train_knn = train %>% dplyr::select(-c("satisfaction","Gender","Customer.Type","Type.of.Travel","Class"))
+test_knn = test %>% dplyr::select(-c("satisfaction","Gender","Customer.Type","Type.of.Travel","Class"))
+```
+
+```{r}
+overall.accuracy = c()
+for (i in 1:20){
+  knn.pred=knn(train_knn,test_knn,train$satisfaction,k=i)
+  values = confusionMatrix(table(knn.pred,test$satisfaction))
+  overall = values$overall
+  overall.accuracy = append(overall.accuracy , overall["Accuracy"])
+}
+
+acc = data.frame(k=1:20, accuracy = overall.accuracy)
+
+ggplot(acc) + aes(x = k, y = accuracy) +geom_line(size = 0.5, colour = "#112446") +  theme_minimal() + geom_vline(xintercept = 8, color = "red")
+```
+
+## SVM
+
+```{r}
+svm_fit <- svm(formula = satisfaction ~ ., data = train, kernel = 'linear')
+
+summary(svm_fit)
+
+svm_fit2 <- svm(formula = satisfaction ~ ., data = train, kernel = 'radial')
+
+summary(svm_fit2)
+```
+
+```{r}
+confusionMatrix(table(true=test$satisfaction,pred=predict(svm_fit, newdata=test)))
+
+confusionMatrix(table(true=test$satisfaction,pred=predict(svm_fit2, newdata=test)))
+```
+
+## Agrupamiento jerárquico
+
+```{r}
+## Method 1
+# Dissimilarity matrix
+d <- dist(train, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete" )
+
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+
+## Method 2
+
+library(cluster)
+
+# Compute with agnes
+hc2 <- agnes(train, method = "complete")
+
+# Agglomerative coefficient
+hc2$ac
+
+# methods to assess
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+# function to compute coefficient
+ac <- function(x) {
+  agnes(df, method = x)$ac
+}
+
+map_dbl(m, ac)
+
+hc3 <- agnes(df, method = "ward")
+pltree(hc3, cex = 0.6, hang = -1, main = "Dendrogram of agnes") 
+
+# Method 3
+
+# compute divisive hierarchical clustering
+hc4 <- diana(df)
+
+# Divise coefficient; amount of clustering structure found
+hc4$dc
+
+pltree(hc4, cex = 0.6, hang = -1, main = "Dendrogram of diana")
+```
